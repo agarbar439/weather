@@ -78,7 +78,30 @@ La API está disponible en el siguiente formato:
   Realiza una solicitud GET a la URL `/weather/:city/:date1/:date2`, donde `city` es el nombre de la ciudad, `date1` es la fecha de inicio, y `date2` es la fecha final del rango (en formato `YYYY-MM-DD`).
 
 Ejemplo:
+GET /weather/Paris/2025-05-19
 
 
+### Respuesta
+
+La respuesta será un objeto JSON con los siguientes datos:
+
+```json
+{
+  "data": [
+    {
+      "datetime": "2025-05-19",
+      "temp": 18.3,
+      "tempmax": 22.0,
+      "tempmin": 15.8,
+      "humidity": 65,
+      "precipprob": 10,
+      "sunrise": "06:00",
+      "sunset": "20:00",
+      "description": "Clear sky"
+    },
+    // Otros días si se consulta un rango
+  ],
+  "cached": false // Indica si los datos fueron obtenidos desde la caché
+}
 
 
