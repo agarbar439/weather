@@ -4,42 +4,95 @@ import redisClient from '../redis/redis.js';
 export class weatherController {
     // Function to obtain the weather
     static async getWeather(req, res) {
-        // Get the 'city' parameter from the URL parameters
-        const city = req.params.city;
-        const date1 = "";
-        const date2 = "";
-        // Check if the 'city' parameter is present
-        if (!city) {
-            return res.status(400).json({ error: 'Missing "city" parameter' });
-        }
+        const { city, date1, date2 } = req.params;
+
+        // Verificación de ciudad
+        checkCity(city);
 
         try {
-            // Generate a cache key based on the city name (in lowercase)
-            const cacheKey = `weather:${city.toLowerCase()}`;
 
-            // Check if the weather data is available in the Redis cache
-            const getResultRedis = await redisClient.get(cacheKey);
+            // Generación de la clave de caché
+            let cacheKey = generateCacheKey(city, date1, date2);
 
-            // If the data is in the cache, return it without making a request to the API
-            if (getResultRedis) {
-                return res.json({ data: JSON.parse(getResultRedis), cached: true });
+            // Intentar obtener los datos de la caché
+            const cachedData = await getCachedData(cacheKey);
+            if (cachedData) {
+                return res.json({ data: cachedData, cached: true });
             }
 
-            // If not in cache, make a request to the external API to get the weather data
+
+
+            // Construcción de la URL según los parámetros de fecha
+            let dateParam = "";
+            if (date1 && date2) {
+                dateParam = `/${date1}/${date2}`;
+            } else if (date1) {
+                dateParam = `/${date1}`;
+            }
+
+            // Solicitar datos a la API externa
             const response = await axios.get(
-                `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${city}/${date1}/${date2}?unitGroup=metric&key=${process.env.API_KEY}`
+                `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${city}${dateParam}?unitGroup=metric&lang=en&key=${process.env.API_KEY}`
             );
 
-            // Store the API response in Redis with an expiration time of 1 hour (3600 seconds)
-            await redisClient.setEx(cacheKey, 3600, JSON.stringify(response.data));
 
-            // Return the API response with the weather data
-            return res.json({ data: response.data, cached: false });
+            // Asegúrate de que los datos están en el formato esperado
+            const daysData = response.data.days;
+            const filteredData = daysData.map(dayData => ({
+                datetime: dayData.datetime,
+                temp: dayData.temp,
+                tempmax: dayData.tempmax,
+                tempmin: dayData.tempmin,
+                humidity: dayData.humidity,
+                precipprob: dayData.precipprob,
+                sunrise: dayData.sunrise,
+                sunset: dayData.sunset,
+                description: dayData.description
+
+            }));
+
+            // Guardar la respuesta de la API en Redis con un tiempo de expiración de 1 hora (3600 segundos)
+            await redisClient.setEx(cacheKey, 3600, JSON.stringify(filteredData));
+
+            // Devolver la respuesta de la API con los datos del clima
+            return res.json({ data: filteredData, cached: false });
 
         } catch (error) {
-            // Handle errors in case of failure with the API or the cache system
+            // Manejo de errores en caso de fallo con la API o el sistema de caché
             console.error('Error consuming the API:', error);
             res.status(500).json({ error: 'Error retrieving weather data' });
         }
+    }
+}
+
+function generateCacheKey(city, date1, date2) {
+    // Generación de la clave de caché dependiendo de los parámetros
+    let cacheKey = `weather:${city.toLowerCase()}`;
+
+    if (date1 && date2) {
+        cacheKey = `${cacheKey}:${date1}:${date2}`; // Para un rango de fechas
+    } else if (date1) {
+        cacheKey = `${cacheKey}:${date1}`; // Solo una fecha
+    }
+    return cacheKey;
+}
+
+async function getCachedData(cacheKey) {
+    // Verificar si los datos están en la caché de Redis
+    const getResultRedis = await redisClient.get(cacheKey);
+
+    // Si los datos están en la caché, devolverlos sin hacer la solicitud a la API
+    if (getResultRedis) {
+        return res.json({ data: JSON.parse(getResultRedis), cached: true });
+    } else {
+        return null;
+    }
+}
+
+// Función para verificar la validez de la ciudad
+function checkCity(city) {
+    // Verificar si el parámetro 'city' está presente y tiene un formato válido
+    if (!city || !/^[a-zA-Z\s]+$/.test(city)) {
+        throw new Error('Invalid city name');
     }
 }
